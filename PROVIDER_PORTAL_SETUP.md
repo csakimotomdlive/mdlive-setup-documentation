@@ -99,6 +99,71 @@ For the patient side of the same flow, see [SCHEDULING_APPOINTMENTS.md — On-ca
 
 ---
 
+## Enable Rx Management (`rx_mgmt_enabled`)
+
+**Rx Management** turns on the newer medication workflows in Provider Portal (health history, SOAP note med sections, EVR medications — add/edit/reconcile/deactivate when actions allow). The app checks `current_user.rx_mgmt_enabled?`, which is true when **either** the global Stern setting **`rx_mgmt_enabled`** is `true` **or** the provider has the **`rx_mgmt_pilot_enabled`** flag set to `yes`.
+
+### Option A — global (all providers)
+
+**Prerequisite:** Stern running (`make stern`).
+
+```bash
+make stern-console
+```
+
+```ruby
+SystemSetting.set_value('rx_mgmt_enabled', 'true')
+SystemSetting.reset_local_cache
+
+# Verify
+SystemSetting.rx_mgmt_enabled?
+# => true
+```
+
+Provider Portal reads settings from Stern and caches them for ~2 minutes. After changing the flag:
+
+- Reload the browser, or wait ~2 minutes, or restart Provider Portal: `make prp-restart` (if your Makefile defines it) / `docker compose restart provider-portal`.
+
+### Option B — single provider (pilot flag)
+
+Use when you want Rx Management for one demo provider without enabling it for everyone:
+
+```bash
+make stern-console
+```
+
+```ruby
+provider = Provider.find_by(username: 'demoprovider1')
+
+flag = ProviderFlag.find_or_initialize_by(
+  provider_id: provider.id,
+  flag_type: ProviderFlag::RX_MGMT_PILOT_ENABLED
+)
+flag.update!(value: 'yes')
+ProviderFlag.clear_cache(provider.id)
+
+# Reload so the in-memory flags reader picks up the change
+provider = Provider.find(provider.id)
+provider.rx_mgmt_enabled?
+# => true (even if rx_mgmt_enabled system setting is still false)
+```
+
+### Confirm in Provider Portal
+
+1. Log in as a provider with Rx Management enabled (`demoprovider1` is fine for Option A or B).
+2. Open a patient chart or in-progress visit — you should see Rx Management navigation and SOAP/health-history medication UI that is hidden when the flag is off.
+
+To turn off globally:
+
+```ruby
+SystemSetting.set_value('rx_mgmt_enabled', 'false')
+SystemSetting.reset_local_cache
+```
+
+More on SystemSettings: [STERN_SETUP.md — SystemSettings](./STERN_SETUP.md#systemsettings).
+
+---
+
 ## Create an extra test provider (optional)
 
 Use when you need another provider beyond the seeded `demoprovider1`–`25`, or after deleting a demo user.
@@ -311,6 +376,7 @@ Accept patient from On-Call Waiting Room → complete visit
 ## Related docs
 
 - [SCHEDULING_APPOINTMENTS.md](./SCHEDULING_APPOINTMENTS.md) — book visits as a patient; on-call flow
+- [STERN_SETUP.md](./STERN_SETUP.md) — Stern, SystemSettings (`rx_mgmt_enabled`, URLs, cache)
 - [PATIENT_PORTAL_SETUP.md](./PATIENT_PORTAL_SETUP.md) — patient login, Survey Monkey, Hosted PCI
 - [README — Initial Launch & URLs](./README.md)
 - [MAKE_TARGETS](./MAKE_TARGETS.md)
