@@ -176,7 +176,61 @@ Provider: login → go on call → accept patient from waiting room
 Provider: complete SOAP / end visit
 ```
 
-Completing the visit creates a **past (completed)** appointment visible in Patient Portal consultation history. For other ways to create or backdate history, see [Past / completed appointments (Stern console)](#past--completed-appointments-stern-console) below.
+Completing the visit creates a **past (completed)** appointment visible in Patient Portal consultation history. For other ways to create or backdate history, see [Past / completed appointments (Stern console)](#past--completed-appointments-stern-console) below. To seed an **upcoming** phone visit without the SAV wizard, see [Upcoming scheduled appointment (Stern console)](#upcoming-scheduled-appointment-stern-console).
+
+---
+
+## Upcoming scheduled appointment (Stern console)
+
+Use this when you need a **pending phone appointment starting in ~30 minutes** — for example provider reminder SMS, care-team / allowed-physician flows, or testing scheduled visit UI — without running the full SAV wizard.
+
+`FactoryBot` is available in Stern’s development console.
+
+```bash
+make stern-console
+```
+
+```ruby
+require "factory_bot_rails"
+include FactoryBot::Syntax::Methods
+
+patient  = Patient.find_by!(username: "demopatient1")
+provider = Provider.find_by!(username: "demoprovider1")
+
+# Optional but useful for messaging / care-team flows
+AllowedPhysician.create_record(user_id: patient.id, physician_id: provider.id)
+
+appt = create(
+  :cust_appointment,
+  :phone,
+  :starting_in_30_mins,
+  patient: patient,
+  physician: provider,
+  affiliation_id: patient.affiliation_id,
+  chief_complaint: "Sore throat"
+)
+
+ProviderAlertsSetting.find_or_create_by!(
+  provider: provider,
+  appointment_method: AppointmentMethod.phone
+) do |s|
+  s.warn_by_method = "sms"
+  s.warn_before_time = "30_mins"
+end
+
+patient.clear_user_cache
+
+puts "Created appt id=#{appt.id}, starts #{appt.start_time}"
+```
+
+| Piece | Purpose |
+|-------|---------|
+| `:phone` + `:starting_in_30_mins` | Phone visit with `phys_availability` ~30 minutes out (`AppointmentStatus.pending`) |
+| `AllowedPhysician` | Links patient and provider for messaging / care-team features |
+| `ProviderAlertsSetting` | Enables provider SMS reminder 30 minutes before phone appointments |
+| `patient.clear_user_cache` | Patient Portal picks up the new appointment |
+
+For **video** instead of phone, swap `:phone` for `:video` and set `appointment_method: AppointmentMethod.video` on `ProviderAlertsSetting`.
 
 ---
 
