@@ -2,99 +2,123 @@
 
 Script: `script/create_appointment_with_soap.rb`
 
-Creates a `CustAppointment` with an associated `CustAppointmentSoapNote` for local development or test data setup.
+Creates a `CustAppointment` with an associated SOAP note for local development or QA. Refuses to run in **production**.
 
 **Prerequisite:** Stern running in `mdlive-dev-environment` (`make stern`). Run commands from the `mdlive-dev-environment` directory. Prefix with `docker compose exec stern bundle exec` (shown below).
+
+When passing CLI flags to the script through `rails runner`, use `--` before the options (see examples).
 
 ---
 
 ## Usage
 
-### Development (existing provider + patient)
+### rails runner (Docker)
 
 ```bash
-docker compose exec stern bundle exec rails runner script/create_appointment_with_soap.rb <provider_id> <patient_id>
-```
-
-Example — completed appointment with **unsigned SOAP** (shows **CREATE SOAP** in Consultation History):
-
-```bash
-docker compose exec stern bundle exec rails runner script/create_appointment_with_soap.rb 42 1001
+docker compose exec stern bundle exec rails runner script/create_appointment_with_soap.rb -- --patient-id=<patient_id>
 ```
 
 Look up demo user IDs in Stern console (`make stern-console`):
 
 ```ruby
-Provider.find_by(username: 'demoprovider1')&.id
 Patient.find_by(username: 'demopatient1')&.id
+Provider.find_by(username: 'demoprovider1')&.id
 ```
 
-### Test environment (creates provider + patient automatically)
+### rails console
 
 ```bash
-docker compose exec stern env RAILS_ENV=test bundle exec rails runner script/create_appointment_with_soap.rb
+make stern-console
 ```
 
-You can still pass provider/patient IDs in test to use existing records:
-
-```bash
-docker compose exec stern env RAILS_ENV=test bundle exec rails runner script/create_appointment_with_soap.rb 42 1001
+```ruby
+load Rails.root.join("script/create_appointment_with_soap.rb")
+CreateAppointmentWithSoap.run(patient_id: 123)
 ```
 
 ---
 
-## Options (ENV)
+## CLI options
 
-| Variable | Values | Default | Description |
-|----------|--------|---------|-------------|
-| `STATUS` | `incomplete`, `completed`, `in_progress` | `incomplete` | Controls appointment and SOAP completion state |
-| `METHOD` | `phone`, `video` | `phone` | Consultation method |
-| `CHIEF_COMPLAINT` | any string | `"Test chief complaint"` | Chief complaint on the appointment |
-| `PROVIDER_ID` | user ID | — | Alternative to first CLI arg (development only) |
-| `PATIENT_ID` | user ID | — | Alternative to second CLI arg (development only) |
+| Flag | Required | Default | Description |
+|------|----------|---------|-------------|
+| `--patient-id=ID` | **Yes** | — | Patient user ID |
+| `--provider-id=ID` | No | Patient's PCP, then first provider | Provider user ID |
+| `--physician-type-id=ID` | No | General Health Adult | Physician type |
+| `--chief-complaint=TEXT` | No | `"Sore throat"` | Chief complaint |
+| `--icd10=CODE` | No | `"J02.9"` | Primary diagnosis ICD-10 code |
+| `--completed` | No | **Yes** (default) | Completed appointment with signed SOAP |
+| `--open-soap` | No | — | In-progress appointment; SOAP left open (unsigned) |
 
-### STATUS values
+---
 
-| Value | Appointment | SOAP | Consultation History behavior |
-|-------|-------------|------|-------------------------------|
-| `incomplete` (default) | Completed | Unsigned | Appears under **Incomplete Consultations** with **CREATE SOAP** |
-| `completed` | Completed | Signed | Appears under **Completed Consultations** with **View SOAP** |
-| `in_progress` | In progress | Unsigned | Visit still open |
+## Environment variables
+
+Same options can be set via env vars (useful without `--` flags):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PATIENT_ID` | — | Required patient ID |
+| `PROVIDER_ID` | — | Optional provider ID |
+| `PHYSICIAN_TYPE_ID` | — | Optional physician type ID |
+| `CHIEF_COMPLAINT` | `"Sore throat"` | Chief complaint |
+| `ICD10` | `"J02.9"` | Primary diagnosis code |
+| `OPEN_SOAP` | `false` | Set to `true` to leave SOAP open (same as `--open-soap`) |
+
+---
+
+## Completion modes
+
+| Mode | Appointment | SOAP | When to use |
+|------|-------------|------|-------------|
+| **Default** (`--completed`) | Completed | Signed (`soap_notes_completed_at` set) | Completed Consultations / **View SOAP** |
+| **`--open-soap`** | In progress | Unsigned | Open visit; finish SOAP in Provider Portal |
 
 ---
 
 ## Examples
 
 ```bash
-# Default: completed appointment, unsigned SOAP
-docker compose exec stern bundle exec rails runner script/create_appointment_with_soap.rb 42 1001
+# Completed appointment with signed SOAP (default)
+docker compose exec stern bundle exec rails runner script/create_appointment_with_soap.rb -- --patient-id=1001
 
-# Signed/completed SOAP
-docker compose exec stern env STATUS=completed bundle exec rails runner script/create_appointment_with_soap.rb 42 1001
+# Specify provider
+docker compose exec stern bundle exec rails runner script/create_appointment_with_soap.rb -- --patient-id=1001 --provider-id=42
 
-# Visit still in progress
-docker compose exec stern env STATUS=in_progress bundle exec rails runner script/create_appointment_with_soap.rb 42 1001
+# Open SOAP (in-progress visit, unsigned note)
+docker compose exec stern bundle exec rails runner script/create_appointment_with_soap.rb -- --patient-id=1001 --open-soap
 
-# Video appointment
-docker compose exec stern env METHOD=video bundle exec rails runner script/create_appointment_with_soap.rb 42 1001
+# Custom chief complaint and diagnosis
+docker compose exec stern bundle exec rails runner script/create_appointment_with_soap.rb -- --patient-id=1001 --chief-complaint="cough" --icd10=R05.9
 
-# Custom chief complaint
-docker compose exec stern env CHIEF_COMPLAINT="sore throat" bundle exec rails runner script/create_appointment_with_soap.rb 42 1001
+# Via env vars (no -- needed)
+docker compose exec stern env PATIENT_ID=1001 PROVIDER_ID=42 bundle exec rails runner script/create_appointment_with_soap.rb
 
-# Test environment with FactoryBot
-docker compose exec stern env RAILS_ENV=test bundle exec rails runner script/create_appointment_with_soap.rb
+# Open SOAP via env
+docker compose exec stern env PATIENT_ID=1001 OPEN_SOAP=true bundle exec rails runner script/create_appointment_with_soap.rb
+```
+
+Console examples:
+
+```ruby
+CreateAppointmentWithSoap.run(patient_id: 1001)
+CreateAppointmentWithSoap.run(patient_id: 1001, provider_id: 42, completed: false)
+CreateAppointmentWithSoap.run(patient_id: 1001, chief_complaint: "headache", icd10: "R51.9")
 ```
 
 ---
 
 ## What it creates
 
-1. `CustomerOnCallQueue`
-2. `CustAppointment` (linked to provider and patient)
-3. `CustAppointmentMetadatum` (with consult start/end times)
-4. `CustAppointmentSoapNote` with sample Subjective, Objective, Assessment, and Plan text
+1. `Order` and `OrderItem` (from the patient's plan product)
+2. `CustomerOnCallQueue`
+3. `CustAppointment` (video visit, linked to provider and patient)
+4. `CustAppointmentMetadatum` (`appointment_source: "script"`, scheduled type)
+5. SOAP note via `SoapNoteCreator`, populated with sample Subjective, Objective, Assessment, and Plan text
+6. `ContinuationOfCare` (PCP follow-up within 72 hours)
+7. `ConsultationsDiagnosis` (primary ICD-10, default `J02.9`)
 
-For `STATUS=incomplete` (default), the appointment is **completed** but the SOAP is **unsigned**, so it shows up in Consultation History with a **CREATE SOAP** button.
+When **completed** (default), the script also sets consult start/end times on the appointment metadata and triggers the SOAP completion worker.
 
 ---
 
@@ -102,26 +126,30 @@ For `STATUS=incomplete` (default), the appointment is **completed** but the SOAP
 
 The script prints a summary when finished:
 
-- Appointment ID
-- Provider ID and name
-- Patient ID and name
-- Appointment status
-- SOAP note ID
-- Whether SOAP is completed
-- Links to Consultation History and SOAP edit (when unsigned)
+```
+Created appointment 12345 for patient 1001
+  Provider: 42 (Demo Provider)
+  Status: completed
+  SOAP: CustAppointmentSoapNote #6789
+  Completed: true
+```
 
-### Related URLs
+---
 
-- Consultation History: `/providers/appointments_history` or `/physician/customer_appointments`
-- Edit SOAP (unsigned): `/providers/appointments/<appointment_id>/soap_notes/<soap_note_id>/edit`
+## Related URLs
 
 Provider Portal base URL: http://localhost:3004
+
+| Page | Path |
+|------|------|
+| Consultation History | `/providers/appointments_history` or `/physician/customer_appointments` |
+| Edit SOAP (unsigned) | `/providers/appointments/<appointment_id>/soap_notes/<soap_note_id>/edit` |
 
 ---
 
 ## Notes
 
-- In **development**, `provider_id` and `patient_id` are required (via CLI args or `PROVIDER_ID` / `PATIENT_ID` env vars).
-- In **test**, FactoryBot creates a provider and patient if IDs are not provided.
-- Appointments are created with `document_on_mdlive: true` and `cust_appointment_type: Diagnostic` so SOAP creation is enabled in the UI.
+- **`--patient-id` is required** (or `PATIENT_ID` env var). The script exits with an error if missing.
+- Provider resolution order: `--provider-id` → patient's `primary_care_provider_id` → first `Provider` in the DB.
+- Appointments use **video** (`AppointmentMethod.video`) and `OnCallType.consultation_webcam`.
 - For other ways to seed consultation history (console recipes, FactoryBot snippets), see [SCHEDULING_APPOINTMENTS.md — Past / completed appointments](./SCHEDULING_APPOINTMENTS.md#past--completed-appointments-stern-console).

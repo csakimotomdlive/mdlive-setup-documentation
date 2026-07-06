@@ -105,11 +105,11 @@ Book visits as a demo patient after Patient Portal login.
 
 ### [create_appointment_with_soap.md](./create_appointment_with_soap.md)
 
-Stern script to seed appointments with SOAP notes for **Provider Portal** Consultation History testing.
+Stern script (`CreateAppointmentWithSoap`) to seed video appointments with SOAP notes for **Provider Portal** testing.
 
-- Completed visit with **unsigned SOAP** (default) — **CREATE SOAP** in Incomplete Consultations
-- Signed SOAP, in-progress visits, phone vs video via `STATUS` / `METHOD` env vars
-- Runs via `docker compose exec stern bundle exec rails runner script/create_appointment_with_soap.rb`
+- `--patient-id` required; optional `--provider-id`, `--chief-complaint`, `--icd10`
+- Default: completed visit with signed SOAP; `--open-soap` for in-progress / unsigned
+- Runnable via `rails runner` or Stern console (`CreateAppointmentWithSoap.run(...)`)
 
 **Prerequisites:** Stern running (`make stern`). Often used with [PROVIDER_PORTAL_SETUP.md](./PROVIDER_PORTAL_SETUP.md).
 
