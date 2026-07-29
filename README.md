@@ -8,7 +8,7 @@ All commands assume you are in the **`mdlive-dev-environment`** repository root 
 
 ## Prerequisites
 
-MD Live local dev requires **Docker Compose** and **Make**. Pick your platform below, then clone [mdlive-dev-environment](https://github.com/BreakthroughBehavioralInc/mdlive-dev-environment), copy `.env.template` to `.env`, set `GITHUB_PERSONAL_ACCESS_TOKEN`, and run `make clone-all` if you have not cloned the app repos yet. Continue with [Initial launch](#initial-launch) below.
+MD Live local dev requires **Docker Compose** and **Make**. Pick your platform below, set up a [GitHub Personal Access Token](#github-personal-access-token), then clone [mdlive-dev-environment](https://github.com/BreakthroughBehavioralInc/mdlive-dev-environment), copy `.env.template` to `.env`, and run `make clone-all` if you have not cloned the app repos yet. Continue with [Initial launch](#initial-launch) below.
 
 ### macOS — Colima
 
@@ -63,6 +63,38 @@ On Windows, run the stack inside **WSL2** (Ubuntu). Native PowerShell/CMD is not
 
 - Run all `make` commands from **WSL**, not PowerShell.
 - Connect to the company **VPN** before cloning private GitHub repos or running `bundle install`.
+
+### GitHub Personal Access Token
+
+Private MD Live repos and internal Ruby/npm packages require a **GitHub Personal Access Token (classic)** with SSO authorized for **BreakthroughBehavioralInc**.
+
+1. Open [GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token](https://github.com/settings/tokens/new).
+2. Set an expiration (or **No expiration** if your org allows it).
+3. Select scope **`repo`** — full control of private repositories.
+4. Generate the token and **copy it immediately** — GitHub shows it only once.
+5. On the token list page, click **Configure SSO** next to **BreakthroughBehavioralInc** and **Authorize** the token.
+
+Add the token to **`mdlive-dev-environment/.env`**:
+
+```bash
+GITHUB_PERSONAL_ACCESS_TOKEN=ghp_your_token_here
+```
+
+This is used by `make clone-all` and by Docker Compose when containers run `bundle install` / npm installs against private GitHub packages.
+
+If you run **`bundle install` on the host** (outside Docker) in Stern or other Rails repos, also add to `~/.zshrc` or `~/.bashrc`:
+
+```bash
+export BUNDLE_GITHUB__COM=ghp_your_token_here
+```
+
+**Common failures:**
+
+| Error | Fix |
+|-------|-----|
+| `Repository not found` | Org access missing, or SSO not authorized on the token |
+| `Authentication failed` | Use the PAT as the password for HTTPS git — not your GitHub password |
+| `bundle install` gem errors | Connect to VPN; confirm `BUNDLE_GITHUB__COM` is set |
 
 ### All platforms
 
