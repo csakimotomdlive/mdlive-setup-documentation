@@ -6,6 +6,70 @@ All commands assume you are in the **`mdlive-dev-environment`** repository root 
 
 ---
 
+## Prerequisites
+
+MD Live local dev requires **Docker Compose** and **Make**. Pick your platform below, then clone [mdlive-dev-environment](https://github.com/BreakthroughBehavioralInc/mdlive-dev-environment), copy `.env.template` to `.env`, set `GITHUB_PERSONAL_ACCESS_TOKEN`, and run `make clone-all` if you have not cloned the app repos yet. Continue with [Initial launch](#initial-launch) below.
+
+### macOS — Colima
+
+On macOS, many developers use **[Colima](https://github.com/abiosoft/colima)** instead of Docker Desktop to run Docker Compose for `mdlive-dev-environment`.
+
+Install and start:
+
+```bash
+brew install colima docker docker-compose
+colima start --cpu 4 --memory 8
+```
+
+Verify Docker is working:
+
+```bash
+docker compose version
+docker ps
+```
+
+**Notes:**
+
+- **Docker Desktop** also works if your team uses it. Do not run Colima and Docker Desktop at the same time — stop one before starting the other.
+- If `docker` cannot connect, run `colima status` and `colima start` again.
+
+### Windows — WSL2 + Docker Desktop
+
+On Windows, run the stack inside **WSL2** (Ubuntu). Native PowerShell/CMD is not supported for the `make` workflow in these docs.
+
+1. **Enable WSL2** (PowerShell as Administrator):
+
+   ```powershell
+   wsl --install
+   ```
+
+   Restart if prompted, then open **Ubuntu** from the Start menu and finish Linux user setup.
+
+2. **Install [Docker Desktop for Windows](https://docs.docker.com/desktop/setup/install/windows-install/)**
+   - Settings → **General** → enable **Use the WSL 2 based engine**
+   - Settings → **Resources → WSL Integration** → enable your Ubuntu distro
+
+3. **In the Ubuntu (WSL) terminal**, install tools and verify Docker:
+
+   ```bash
+   sudo apt update && sudo apt install -y make git
+   docker compose version
+   docker ps
+   ```
+
+   Clone repos inside your WSL home directory (e.g. `~/GitHub/`), not under `/mnt/c/`, for better file performance.
+
+**Notes:**
+
+- Run all `make` commands from **WSL**, not PowerShell.
+- Connect to the company **VPN** before cloning private GitHub repos or running `bundle install`.
+
+### All platforms
+
+- Patient Portal and Grafana both bind host port **3000** — see [PATIENT_PORTAL_SETUP.md — Troubleshooting](./PATIENT_PORTAL_SETUP.md#troubleshooting).
+
+---
+
 ## Initial launch
 
 First time on a fresh machine or empty database:
