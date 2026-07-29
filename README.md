@@ -2,13 +2,27 @@
 
 Guides for running MD Live applications in **`mdlive-dev-environment`** (Docker Compose + Make targets). These docs cover first-time setup, demo credentials, console recipes, feature flags, and troubleshooting — not application source code.
 
-All commands assume you are in the **`mdlive-dev-environment`** repository root unless noted otherwise.
+All commands assume you are in the **`mdlive-dev-environment`** repository root unless noted otherwise. Every `make` and `docker compose` command in these docs is run from that directory — not from Stern, Patient Portal, or this documentation repo.
 
 ---
 
 ## Prerequisites
 
-MD Live local dev requires **Docker Compose** and **Make**. Pick your platform below, set up a [GitHub Personal Access Token](#github-personal-access-token), then clone [mdlive-dev-environment](https://github.com/BreakthroughBehavioralInc/mdlive-dev-environment), copy `.env.template` to `.env`, and run `make clone-all` if you have not cloned the app repos yet. Continue with [Initial launch](#initial-launch) below.
+MD Live local dev requires **Docker Compose** and **Make**. Pick your platform below, set up a [GitHub Personal Access Token](#github-personal-access-token), then clone and configure `mdlive-dev-environment`. Continue with [Initial launch](#initial-launch) below.
+
+### Working directory
+
+After cloning, **`cd` into `mdlive-dev-environment`** before running any setup or `make` commands:
+
+```bash
+git clone https://github.com/BreakthroughBehavioralInc/mdlive-dev-environment.git
+cd mdlive-dev-environment
+cp .env.template .env
+# edit .env — set GITHUB_PERSONAL_ACCESS_TOKEN
+make clone-all
+```
+
+Use your actual clone path if different (e.g. `cd ~/GitHub/mdlive-dev-environment` on macOS/WSL). All subsequent commands in this README assume you are still in that directory.
 
 ### macOS — Colima
 
@@ -104,9 +118,10 @@ export BUNDLE_GITHUB__COM=ghp_your_token_here
 
 ## Initial launch
 
-First time on a fresh machine or empty database:
+From the **`mdlive-dev-environment`** directory (`cd mdlive-dev-environment`), first time on a fresh machine or empty database:
 
 ```bash
+cd mdlive-dev-environment   # skip if already there
 make stern-init                    # telehealth DB + demo patients/providers
 make stern
 make stern-elasticsearch-index     # first time only — provider search
