@@ -164,6 +164,126 @@ More on SystemSettings: [STERN_SETUP.md — SystemSettings](./STERN_SETUP.md#sys
 
 ---
 
+## Specialty SOAP note — sign and Continuation of Care
+
+Local seed-data fixes so you can **sign a Psychiatrist specialty SOAP note** and exercise **Continuation of Care** (Follow-up vs Referral). The CoC type dropdown itself is an app change (**MPP-7803**) already in the Provider Portal worktree — everything below is Stern console / MySQL data, not application code.
+
+### Example visit
+
+| Role | Value |
+|------|--------|
+| Patient | `demopatient1` (user id **4** on a typical `stern-init`), affiliation **surveymonkey** (**185**) |
+| Provider | `demoprovider3` (Psychiatrist) — look up id with `Provider.find_by!(username: "demoprovider3").id` |
+| Appointment | `<appointment_id>` — Psychiatrist visit for that pair |
+| Specialty SOAP note | `<specialty_soap_note_id>` — Intake note on that appointment |
+
+Look up `<appointment_id>` and `<specialty_soap_note_id>` in `make stern-console` after you book or create the visit (see [BH Psychiatry appointment](./SCHEDULING_APPOINTMENTS.md#bh-psychiatry-appointment-history--credit--schedule)):
+
+```ruby
+patient  = Patient.find_by!(username: "demopatient1")
+provider = Provider.find_by!(username: "demoprovider3")
+appt = CustAppointment.where(customer_id: patient.id, physician_id: provider.id).order(id: :desc).first
+soap = appt&.specialty_soap_note
+puts "appointment_id=#{appt&.id} specialty_soap_note_id=#{soap&.id}"
+```
+
+Log in as `demoprovider3` / `Mdlive123!` and open the **unsigned** note:
+
+```
+http://localhost:3004/providers/appointments/<appointment_id>/specialty_soap_notes
+```
+
+Once the note is signed, Continuation of Care on it is **read-only**. Use an addendum instead — [Continuation of Care local setup](#continuation-of-care-local-setup).
+
+With `specialty_soap_note_coc_enabled` on, the note also requires one saved Continuation of Care before it can be signed.
+
+### Blockers (in the order they came up)
+
+**Before the visit exists (scheduling / payment)**
+
+1. **Behavioral history** — Scheduling returned “Patient must complete medical history for provider type Psychiatrist.” Seed Depression + Hospitalized = No (patient and family).  
+2. **Payment** — Hosted PCI returned a generic “card was not charged” error. Add an unused `"(BH) Psychiatry"` consultation credit so the visit skips payment.
+
+Do both in one pass: [BH Psychiatry appointment (history → credit → schedule)](./SCHEDULING_APPOINTMENTS.md#bh-psychiatry-appointment-history--credit--schedule).
+
+**On the specialty SOAP note (signing)**
+
+3. **Diagnosis** — Signing crashed because `diagnosis_concept_ids` was empty. Setting `["F32.9"]` failed next because that code is secondary-only; use a primary-capable ICD-10 such as `["F32.1"]` on the note (Stern console / MySQL).
+
+4. **CPT** — `update_cpt_code` lives on the Provider Portal model, not in Stern. Set the note’s `dynamic_fields["cpt_code_id"]` to a selectable Psychiatrist code (e.g. id **1** = 90792) and save. If the dropdown stays blank, that CPT row is not selectable for Psychiatrists — it needs physician type, category, billing type, and a start date. Example values used for CPT id **1**:
+
+   | Field | Value |
+   |-------|--------|
+   | Physician type | **6** (Psychiatrist) |
+   | Category | `p` |
+   | Billing type | `f` |
+   | Start date | a date in the past |
+
+   Reload the note with the SOAP page **closed**. Autosave will otherwise write the blank select back over the saved id.
+
+5. **Continuation of Care** — Section is hidden unless `specialty_soap_note_coc_enabled` is `true`. Steps for the flag, addendum URL, and internal MDLIVE follow-up choices: [Continuation of Care local setup](#continuation-of-care-local-setup).
+
+### Continuation of Care local setup
+
+1. Enable the feature in the Stern console (`make stern-console`):
+
+   ```ruby
+   SystemSetting.set_value("specialty_soap_note_coc_enabled", "true")
+   SystemSetting.reset_local_cache
+   ```
+
+2. Restart Stern and Provider Portal so cached settings are cleared. From `mdlive-dev-environment`:
+
+   ```bash
+   docker compose restart stern provider-portal
+   ```
+
+   (Reload the browser, or wait ~2 minutes, if a restart is inconvenient — Provider Portal caches Stern settings briefly.)
+
+3. If the specialty SOAP note is already **signed**, its Continuation of Care editor is read-only. Open an addendum:
+
+   ```
+   http://localhost:3004/providers/appointments/<appointment_id>/specialty_soap_note_addendums/<specialty_soap_note_id>
+   ```
+
+   `<specialty_soap_note_id>` is the Intake specialty SOAP note id on the appointment, not a separate addendum id. Or click **ADD ADDENDUM** at the bottom of the signed SOAP note.
+
+4. On the addendum, scroll to **Continuation Of Care**, after **Follow-up Recommendation**.
+
+5. Trigger the updated lists:
+
+   | Type | Fields shown |
+   |------|----------------|
+   | Follow-up | Follow Up With |
+   | Referral | Refer Patient To |
+
+6. Internal MDLIVE follow-up choices for affiliation **185** (Survey Monkey) stay hidden until `internal_referrals_enabled` is true. In the Stern console:
+
+   ```ruby
+   AffiliationRules.find_or_initialize_by(
+     affiliation_id: 185,
+     key: "internal_referrals_enabled"
+   ).update!(value: "true")
+   Rails.cache.delete(
+     Affiliation.find(185).cache_key + "/biz_rule_hash"
+   )
+   ```
+
+   Then clear Provider Portal caches (`mdlive-dev-environment`):
+
+   ```bash
+   docker compose exec provider-portal bundle exec rails console
+   ```
+
+   ```ruby
+   Rails.cache.delete("biz_rule_hash/185")
+   Rails.cache.delete("Patient#available_provider_types:4")  # demopatient1 user id
+   ```
+
+   **MDLIVE Primary Care**, **Psychiatrist**, and **Therapist** appear only when the patient is eligible for those provider types. The provider already on the visit remains available regardless.
+
+---
+
 ## Create an extra test provider (optional)
 
 Use when you need another provider beyond the seeded `demoprovider1`–`25`, or after deleting a demo user.
@@ -375,8 +495,8 @@ Accept patient from On-Call Waiting Room → complete visit
 
 ## Related docs
 
-- [SCHEDULING_APPOINTMENTS.md](./SCHEDULING_APPOINTMENTS.md) — book visits as a patient; on-call flow
-- [STERN_SETUP.md](./STERN_SETUP.md) — Stern, SystemSettings (`rx_mgmt_enabled`, URLs, cache)
+- [SCHEDULING_APPOINTMENTS.md](./SCHEDULING_APPOINTMENTS.md) — book visits; [BH Psychiatry path](./SCHEDULING_APPOINTMENTS.md#bh-psychiatry-appointment-history--credit--schedule) before specialty SOAP / CoC
+- [STERN_SETUP.md](./STERN_SETUP.md) — Stern, SystemSettings (`rx_mgmt_enabled`, `specialty_soap_note_coc_enabled`, URLs, cache)
 - [PATIENT_PORTAL_SETUP.md](./PATIENT_PORTAL_SETUP.md) — patient login, Survey Monkey, Hosted PCI
 - [README — Initial Launch & URLs](./README.md)
 - [MAKE_TARGETS](./MAKE_TARGETS.md)

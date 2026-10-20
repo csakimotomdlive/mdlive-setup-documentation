@@ -371,9 +371,13 @@ These run in `make stern-console`. Full snippets and options live in [SCHEDULING
 
 | Task | Section in scheduling doc |
 |------|---------------------------|
+| Schedule or waiting-room visit (`AppointmentCreator`) | [AppointmentCreator](./SCHEDULING_APPOINTMENTS.md#create-appointment-with-appointmentcreator-stern-console) |
+| BH Psychiatry (history → credit → schedule) | [BH Psychiatry appointment](./SCHEDULING_APPOINTMENTS.md#bh-psychiatry-appointment-history--credit--schedule) |
+| Upcoming phone visit (~30 min, FactoryBot) | [Upcoming scheduled appointment](./SCHEDULING_APPOINTMENTS.md#upcoming-scheduled-appointment-stern-console) |
 | Mark visits completed / seed consultation history | [Past / completed appointments](./SCHEDULING_APPOINTMENTS.md#past--completed-appointments-stern-console) |
-| Free Urgent Care / E-Visit service credits | [Free service credits](./SCHEDULING_APPOINTMENTS.md#free-service-credits-stern-console) |
-| Verify `Cost.get_consultation_cost` | Same doc — troubleshooting |
+| Free Urgent Care / E-Visit / BH service credits | [Free service credits](./SCHEDULING_APPOINTMENTS.md#free-service-credits-stern-console) |
+| Specialty SOAP CoC flag + addendum UI | [PROVIDER_PORTAL_SETUP — Specialty SOAP](./PROVIDER_PORTAL_SETUP.md#specialty-soap-note--sign-and-continuation-of-care) |
+| Verify `Cost.get_consultation_cost` | [SCHEDULING_APPOINTMENTS — credits](./SCHEDULING_APPOINTMENTS.md#verify-it-works) |
 
 Always call `patient.clear_user_cache` after appointment or credit changes.
 

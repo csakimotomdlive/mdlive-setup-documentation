@@ -74,6 +74,32 @@ Fastest path to a successful booking — no provider on call required:
 
 This exercises the full scheduled flow without requiring a provider to be on call.
 
+**Note:** Therapy and Psychiatry need a completed behavioral history on the patient. `demopatient1` often lacks it out of the box — seed it first ([Behavioral history](#behavioral-history-for-therapy--psychiatry)). For a Stern-only Psychiatrist visit that also skips payment, use [BH Psychiatry appointment](#bh-psychiatry-appointment-history--credit--schedule).
+
+---
+
+## Behavioral history for Therapy / Psychiatry
+
+Patient 4 (`demopatient1`) has no behavioral health history, and a **Psychiatrist** (or **Therapy**) visit requires that history before it can be scheduled. The error text says **"medical history,"** but for behavioral health visits Stern checks `BehavioralHistoryConditions.behavioral_history_completed?` instead.
+
+Three records are missing for this patient:
+
+- An active `BehavioralTherapyReason` (why they are seeking care)
+- A `BehavioralHistoryConditions` row named **Hospitalized** with value **No**, or **Yes** plus a date or duration
+- A `BehavioralHistoryFamilyHistory` row named **Hospitalized**
+
+In the Stern console (`make stern-console`), this creates the minimum set:
+
+```ruby
+patient = Patient.find(4)
+BehavioralTherapyReason.create!(user_id: patient.id, name: "Depression", active: true, updated_by: patient.id)
+BehavioralHistoryConditions.create!(user_id: patient.id, name: "Hospitalized", value: "No", updated_by: patient.id)
+BehavioralHistoryFamilyHistory.create!(user_id: patient.id, name: "Hospitalized", value: "No", updated_by: patient.id)
+BehavioralHistoryConditions.behavioral_history_completed?(patient.id)
+```
+
+The last line should return a truthy value. Then book again from the UI, or continue with credit + schedule in [BH Psychiatry appointment](#bh-psychiatry-appointment-history--credit--schedule). Re-running the `create!` lines fails if the rows already exist — skip this step when `behavioral_history_completed?` is already truthy.
+
 ---
 
 ## Step-by-step: book from the UI
@@ -176,13 +202,156 @@ Provider: login → go on call → accept patient from waiting room
 Provider: complete SOAP / end visit
 ```
 
-Completing the visit creates a **past (completed)** appointment visible in Patient Portal consultation history. For other ways to create or backdate history, see [Past / completed appointments (Stern console)](#past--completed-appointments-stern-console) below. To seed an **upcoming** phone visit without the SAV wizard, see [Upcoming scheduled appointment (Stern console)](#upcoming-scheduled-appointment-stern-console).
+Completing the visit creates a **past (completed)** appointment visible in Patient Portal consultation history. Stern console alternatives, in order:
+
+1. [AppointmentCreator](#create-appointment-with-appointmentcreator-stern-console) — scheduled or waiting-room visits
+2. [BH Psychiatry appointment](#bh-psychiatry-appointment-history--credit--schedule) — behavioral history → BH credit → schedule
+3. [Upcoming scheduled appointment](#upcoming-scheduled-appointment-stern-console) — FactoryBot phone visit ~30 minutes out
+4. [Past / completed appointments](#past--completed-appointments-stern-console) — consultation history / backdated data
+
+---
+
+## Create appointment with AppointmentCreator (Stern console)
+
+Use this when you need a **scheduled** or **waiting-room** appointment without the Patient Portal SAV wizard. Run in `make stern-console`.
+
+Load the patient and provider for your scenario, then set **`PhysicianType`**, **`AppointmentMethod`**, **`start_time`**, and **`end_time`** to match the visit. The sample below is a **Psychiatrist video** visit — for the full BH path (history + credit first), jump to [BH Psychiatry appointment](#bh-psychiatry-appointment-history--credit--schedule).
+
+```ruby
+patient  = Patient.find_by!(username: "demopatient1")  # or User.find(<patient_id>)
+provider = Provider.find_by!(username: "demoprovider3") # or User.find(<provider_id>)
+```
+
+### Scheduled appointment
+
+```ruby
+appointment_creator = AppointmentCreator.new(
+  patient_id: patient.id,
+  provider_type_id: PhysicianType.psychiatrist.id,
+  state_id: patient.state_id,
+  provider_id: provider.id,
+  start_time: Time.now + 180,   # seconds from now — change for your scenario
+  end_time: Time.now + 900,
+  appointment_status_id: 1,
+  appointment_method_id: AppointmentMethod.video.id,
+  chief_complaint: "Obsessive disorder",
+  customer_call_in_number: patient.phone,
+  survey_answer: "Emergency Room",
+  request_headers: {
+    host: "127.0.0.1",
+    browser: "Chrome",
+    activity_source: "CSA",
+  }
+)
+
+appointment_creator.schedule_appointment!
+appointment_creator.errors.any?
+appointment_creator.errors.full_messages
+```
+
+| Field | Examples |
+|-------|----------|
+| `provider_type_id` | `PhysicianType.psychiatrist.id`, or other `PhysicianType` helpers (therapy, general health, …) |
+| `appointment_method_id` | `AppointmentMethod.video.id`, `AppointmentMethod.phone.id` |
+| `start_time` / `end_time` | Relative (`Time.now + 180`) or absolute slot times |
+| `provider_id` | Required for scheduled visits — omit for waiting room (below) |
+
+### Waiting-room appointment
+
+Same as scheduled, but **remove**:
+
+- `provider_id`
+- `start_time`
+- `end_time`
+
+The patient enters the on-call queue; a provider who is on call (see [On-call urgent care](#on-call-urgent-care-provider-required)) can accept them.
+
+After a successful create, run `patient.clear_user_cache` if Patient Portal should show the new appointment immediately.
+
+---
+
+## BH Psychiatry appointment (history → credit → schedule)
+
+One Stern console path for a **Psychiatrist** visit that **skips payment**: seed behavioral history → add a BH credit → schedule with `AppointmentCreator`. Run in `make stern-console`.
+
+For Therapy, use `"(BH) Therapy"`, a therapist provider, and the matching `PhysicianType`. For waiting-room instead of a timed slot, see [Waiting-room appointment](#waiting-room-appointment) (omit `provider_id`, `start_time`, `end_time`).
+
+### 1. Behavioral history
+
+Skip if `BehavioralHistoryConditions.behavioral_history_completed?(patient.id)` is already truthy. Full notes: [Behavioral history for Therapy / Psychiatry](#behavioral-history-for-therapy--psychiatry).
+
+```ruby
+patient = Patient.find_by!(username: "demopatient1")
+
+unless BehavioralHistoryConditions.behavioral_history_completed?(patient.id)
+  BehavioralTherapyReason.create!(user_id: patient.id, name: "Depression", active: true, updated_by: patient.id)
+  BehavioralHistoryConditions.create!(user_id: patient.id, name: "Hospitalized", value: "No", updated_by: patient.id)
+  BehavioralHistoryFamilyHistory.create!(user_id: patient.id, name: "Hospitalized", value: "No", updated_by: patient.id)
+end
+
+BehavioralHistoryConditions.behavioral_history_completed?(patient.id)
+# => truthy
+```
+
+### 2. Unused BH Psychiatry credit (skip payment)
+
+```ruby
+ConsultationCreditTrackingInformation.create!(
+  user_id: patient.id,
+  consult_type: "(BH) Psychiatry",
+  status: "Unused",
+  expiry_date: 1.year.from_now,
+  transferable: false
+)
+```
+
+Use `"(BH) Therapy"` when booking Therapy. Credit catalog and Urgent Care examples: [Free service credits](#free-service-credits-stern-console).
+
+### 3. Schedule with AppointmentCreator
+
+Build a **new** `AppointmentCreator` after adding the credit — cost is cached on the instance and will not pick up a credit created earlier on the same object.
+
+```ruby
+provider = Provider.find_by!(username: "demoprovider3")  # Psychiatrist
+
+appointment_creator = AppointmentCreator.new(
+  patient_id: patient.id,
+  provider_type_id: PhysicianType.psychiatrist.id,
+  state_id: patient.state_id,
+  provider_id: provider.id,
+  start_time: Time.now + 180,
+  end_time: Time.now + 900,
+  appointment_status_id: 1,
+  appointment_method_id: AppointmentMethod.video.id,
+  chief_complaint: "Obsessive disorder",
+  customer_call_in_number: patient.phone,
+  survey_answer: "Emergency Room",
+  request_headers: {
+    host: "127.0.0.1",
+    browser: "Chrome",
+    activity_source: "CSA",
+  }
+)
+
+appointment_creator.cost.slice(:cost, :skip_payment, :balance, :reservation_fee)
+# expect skip_payment: true, balance: 0
+
+appointment_creator.schedule_appointment!
+appointment_creator.errors.any?
+appointment_creator.errors.full_messages
+
+patient.clear_user_cache
+```
+
+If `balance` is still greater than zero, the credit will not stop the charge — confirm `consult_type` is `"(BH) Psychiatry"` and instantiate a fresh `AppointmentCreator`. Other visit types: [AppointmentCreator](#create-appointment-with-appointmentcreator-stern-console).
+
+Next (Provider Portal): sign the specialty SOAP note and exercise Continuation of Care — [PROVIDER_PORTAL_SETUP.md — Specialty SOAP note](./PROVIDER_PORTAL_SETUP.md#specialty-soap-note--sign-and-continuation-of-care).
 
 ---
 
 ## Upcoming scheduled appointment (Stern console)
 
-Use this when you need a **pending phone appointment starting in ~30 minutes** — for example provider reminder SMS, care-team / allowed-physician flows, or testing scheduled visit UI — without running the full SAV wizard.
+Use this when you need a **pending phone appointment starting in ~30 minutes** — for example provider reminder SMS, care-team / allowed-physician flows, or testing scheduled visit UI — without running the full SAV wizard. For a general scheduled or waiting-room visit via Stern’s scheduler, prefer [AppointmentCreator](#create-appointment-with-appointmentcreator-stern-console) above.
 
 `FactoryBot` is available in Stern’s development console.
 
@@ -472,6 +641,39 @@ Each `consult_type` on a credit maps to one or more **physician types** (provide
 
 For Therapy or Psychiatry credits, use `(BH) Therapy` or `(BH) Psychiatry` as the `consult_type` and pass the matching `provider_type_id` to `Cost.get_consultation_cost` when verifying.
 
+### Create a free BH Psychiatry credit
+
+Same credit as step 2 of [BH Psychiatry appointment](#bh-psychiatry-appointment-history--credit--schedule):
+
+```ruby
+ConsultationCreditTrackingInformation.create!(
+  user_id: Patient.find_by!(username: "demopatient1").id,
+  consult_type: "(BH) Psychiatry",
+  status: "Unused",
+  expiry_date: 1.year.from_now,
+  transferable: false
+)
+```
+
+Use `"(BH) Therapy"` instead when booking Therapy.
+
+### Verify with AppointmentCreator (cost cache)
+
+`AppointmentCreator` caches cost on the instance. After adding a credit, **build a new** `AppointmentCreator` — an old one’s cost is already cached and will not pick up the credit. The BH path runs this check in [step 3](#3-schedule-with-appointmentcreator).
+
+Before you schedule, check:
+
+```ruby
+appointment_creator.cost.slice(:cost, :skip_payment, :balance, :reservation_fee)
+```
+
+| Field | Expected |
+|-------|----------|
+| `skip_payment` | `true` |
+| `balance` | `0` |
+
+If `balance` is still greater than zero, the credit will **not** stop the charge. Confirm the credit’s `consult_type` matches the visit, then instantiate a fresh `AppointmentCreator` and re-check.
+
 **Note:** Service credits live in `consultation_credit_tracking_informations`. You do **not** need a separate row in the legacy `consultation_credits` table. In Patient Portal, `ConsultationCredit.find(patient_id)` is an API call to Stern (`GET /consultation_credits/:patient_id`), not a database lookup for a credit record.
 
 ---
@@ -657,9 +859,13 @@ Check for:
 - Try a **scheduled** service (Therapy) instead of on-call Urgent Care
 - Check patient-portal logs: `make pap-logs`
 
+### Therapy / Psychiatry blocked — “medical history” required
+
+The UI may say medical history is incomplete, but BH visits check `BehavioralHistoryConditions.behavioral_history_completed?`. Seed the minimum rows — [Behavioral history](#behavioral-history-for-therapy--psychiatry) — or run the full console path: [BH Psychiatry appointment](#bh-psychiatry-appointment-history--credit--schedule).
+
 ### Payment step blocks booking ($1 auth, eligibility failure, unexpected cost)
 
-Grant a free service credit in Stern — see [Free service credits (Stern console)](#free-service-credits-stern-console) above. Verify with `Cost.get_consultation_cost` in Stern console.
+Grant a free service credit in Stern — [Free service credits](#free-service-credits-stern-console). For Psychiatry / Therapy, use `"(BH) Psychiatry"` / `"(BH) Therapy"` (or the full [BH Psychiatry appointment](#bh-psychiatry-appointment-history--credit--schedule) path). Verify with `Cost.get_consultation_cost` or `appointment_creator.cost` in Stern console.
 
 ### Payment page errors / `billing_details` / `ConsultationCredit.find`
 
@@ -687,8 +893,9 @@ Provider Portal uses Stern SSO similar to Patient Portal. Ensure `make stern` is
 
 ## Related docs
 
-- [PROVIDER_PORTAL_SETUP.md](./PROVIDER_PORTAL_SETUP.md) — provider login, on-call, demo providers
+- [PROVIDER_PORTAL_SETUP.md](./PROVIDER_PORTAL_SETUP.md) — provider login, on-call; [specialty SOAP / Continuation of Care](./PROVIDER_PORTAL_SETUP.md#specialty-soap-note--sign-and-continuation-of-care)
 - [PATIENT_PORTAL_SETUP.md](./PATIENT_PORTAL_SETUP.md) — login, Survey Monkey, troubleshooting
+- [STERN_SETUP.md](./STERN_SETUP.md) — SystemSettings, console recipe index
 - [README — URLs & logins](./README.md)
 - [MAKE_TARGETS](./MAKE_TARGETS.md)
 - [Patient Portal repo](https://github.com/BreakthroughBehavioralInc/Patient-Portal)

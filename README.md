@@ -193,6 +193,7 @@ Run and log into **Provider Portal** (`make prp`, port **3004**).
 - Demo provider types and which to use for each visit type
 - **Go on call** — urgent care waiting room
 - **Enable Rx Management** (`rx_mgmt_enabled` or per-provider pilot flag)
+- **Specialty SOAP / Continuation of Care** — Psychiatrist note signing, CoC addendum, internal referrals (affiliation 185)
 - Create extra test providers
 - Architecture (shared DB, Stern SSO URLs)
 - Troubleshooting (invalid credentials, DB host, on-call empty queue)
@@ -206,7 +207,7 @@ Book visits as a demo patient after Patient Portal login.
 - SAV wizard flow (scheduled vs on-call urgent care)
 - Recommended first test (Therapy — no provider on call)
 - Step-by-step UI booking
-- **Stern console** — past/completed appointments, free service credits
+- **Stern console** — `AppointmentCreator`, BH Psychiatry path (history → credit → schedule), upcoming FactoryBot seed, past/completed appointments, free service credits
 - Hosted PCI and payment-step troubleshooting
 - End-to-end with Provider Portal (accept + complete visit)
 
